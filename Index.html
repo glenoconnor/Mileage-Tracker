@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<!--
+  SHAREPOINT SETUP REQUIRED
+  ─────────────────────────
+  Site: https://modpizza.sharepoint.com/sites/Mileage
+  List: MileageSubmissions
+
+  Required list columns:
+    Title      → Single line of text  (rename from default — stores Email)
+    Month      → Single line of text
+    Miles      → Number
+    Submitted  → Single line of text
+
+  Deployment: Upload this file to a SharePoint page as an Embed web part.
+  Employees must be signed into their modpizza Microsoft 365 account to submit.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mileage Reimbursement Portal</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap');
+
+  :root {
+    --ink: #1a1a1a;
+    --paper: #f5f0e8;
+    --cream: #ede8db;
+    --rust: #c0432a;
+    --rust-light: #e8604a;
+    --rust-dim: rgba(192,67,42,0.12);
+    --forest: #2d4a3e;
+    --gold: #b8860b;
+    --rule: rgba(26,26,26,0.15);
+    --shadow: 0 4px 24px rgba(26,26,26,0.12);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Mono', monospace;
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+    background-image: 
+      repeating-linear-gradient(0deg, transparent, transparent 27px, var(--rule) 27px, var(--rule) 28px);
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: var(--forest);
+    color: var(--paper);
+    padding: 0 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+  }
+  header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.35rem;
+    letter-spacing: 0.01em;
+  }
+  header .tagline {
+    font-size: 0.68rem;
+    opacity: 0.6;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-top: 2px;
+  }
+  .admin-toggle {
+    background: none;
+    border: 1.5px solid rgba(245,240,232,0.4);
+    color: var(--paper);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 7px 14px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.2s;
+  }
+  .admin-toggle:hover {
+    background: rgba(245,240,232,0.12);
+    border-color: rgba(245,240,232,0.7);
+  }
+
+  /* ── MAIN LAYOUT ── */
+  main {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 6rem;
+  }
+
+  /* ── VIEWS ── */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ── PAGE TITLE ── */
+  .page-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 2.6rem;
+    line-height: 1.1;
+    color: var(--ink);
+    margin-bottom: 0.4rem;
+  }
+  .page-title em {
+    color: var(--rust);
+    font-style: italic;
+  }
+  .page-sub {
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #666;
+    margin-bottom: 2.5rem;
+    padding-bottom: 2rem;
+    border-bottom: 1.5px solid var(--rule);
+  }
+
+  /* ── FORM ── */
+  .form-group {
+    margin-bottom: 1.8rem;
+  }
+  label {
+    display: block;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #555;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+  }
+  input[type="email"],
+  input[type="number"],
+  input[type="password"],
+  select {
+    width: 100%;
+    background: rgba(255,255,255,0.7);
+    border: 1.5px solid var(--rule);
+    border-radius: 3px;
+    padding: 12px 14px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.9rem;
+    color: var(--ink);
+    transition: border-color 0.2s, box-shadow 0.2s;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--rust);
+    box-shadow: 0 0 0 3px var(--rust-dim);
+  }
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%231a1a1a' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
+    cursor: pointer;
+  }
+  .input-hint {
+    font-size: 0.68rem;
+    color: #888;
+    margin-top: 5px;
+    letter-spacing: 0.02em;
+  }
+
+  /* miles display */
+  .miles-display {
+    font-family: 'DM Serif Display', serif;
+    font-size: 3rem;
+    color: var(--rust);
+    text-align: center;
+    padding: 1rem 0 0.5rem;
+    letter-spacing: -0.02em;
+  }
+  .miles-unit {
+    font-size: 1rem;
+    color: #999;
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: inline-block;
+    padding: 13px 28px;
+    border-radius: 3px;
+    border: none;
+    cursor: pointer;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .btn-primary {
+    background: var(--rust);
+    color: white;
+    width: 100%;
+    margin-top: 0.5rem;
+    box-shadow: 0 3px 12px rgba(192,67,42,0.3);
+  }
+  .btn-primary:hover { background: var(--rust-light); transform: translateY(-1px); box-shadow: 0 5px 16px rgba(192,67,42,0.35); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-secondary {
+    background: var(--forest);
+    color: var(--paper);
+    box-shadow: 0 3px 12px rgba(45,74,62,0.25);
+  }
+  .btn-secondary:hover { opacity: 0.88; transform: translateY(-1px); }
+  .btn-outline {
+    background: transparent;
+    border: 1.5px solid var(--rule);
+    color: var(--ink);
+  }
+  .btn-outline:hover { border-color: var(--ink); }
+
+  /* ── SUCCESS STATE ── */
+  .success-box {
+    display: none;
+    background: rgba(45,74,62,0.08);
+    border: 1.5px solid var(--forest);
+    border-radius: 4px;
+    padding: 1.5rem;
+    text-align: center;
+    margin-top: 1.5rem;
+  }
+  .success-box .check {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+  .success-box p {
+    font-size: 0.82rem;
+    color: var(--forest);
+    line-height: 1.6;
+  }
+  .success-box strong {
+    font-weight: 500;
+    display: block;
+    margin-bottom: 0.3rem;
+    font-size: 0.95rem;
+  }
+
+  /* ── ERROR ── */
+  .error-msg {
+    font-size: 0.72rem;
+    color: var(--rust);
+    margin-top: 6px;
+    display: none;
+    letter-spacing: 0.02em;
+  }
+
+  /* ── ADMIN VIEW ── */
+  .admin-header-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1.5px solid var(--rule);
+    flex-wrap: wrap;
+  }
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .stat-card {
+    background: white;
+    border: 1.5px solid var(--rule);
+    border-radius: 4px;
+    padding: 1rem 1.2rem;
+    text-align: center;
+  }
+  .stat-card .stat-num {
+    font-family: 'DM Serif Display', serif;
+    font-size: 2rem;
+    color: var(--rust);
+    line-height: 1;
+  }
+  .stat-card .stat-lbl {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #888;
+    margin-top: 4px;
+  }
+
+  /* ── TABLE ── */
+  .table-wrap {
+    overflow-x: auto;
+    border: 1.5px solid var(--rule);
+    border-radius: 4px;
+    background: white;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+  }
+  thead { background: var(--forest); }
+  thead th {
+    color: var(--paper);
+    text-align: left;
+    padding: 11px 14px;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  tbody tr { border-bottom: 1px solid var(--cream); transition: background 0.15s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--cream); }
+  tbody td { padding: 11px 14px; color: var(--ink); }
+  tbody td:last-child { color: var(--rust); font-weight: 500; }
+  .empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: #aaa;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+  }
+
+  /* ── AUTH PANEL ── */
+  .auth-panel {
+    max-width: 360px;
+    margin: 4rem auto;
+    background: white;
+    border: 1.5px solid var(--rule);
+    border-radius: 6px;
+    padding: 2.5rem;
+    box-shadow: var(--shadow);
+  }
+  .auth-panel h2 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.6rem;
+    margin-bottom: 0.3rem;
+  }
+  .auth-panel .sub {
+    font-size: 0.7rem;
+    color: #888;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 1.8rem;
+    padding-bottom: 1.2rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .lock-icon {
+    font-size: 1.8rem;
+    margin-bottom: 0.6rem;
+  }
+
+  /* ── FILTER BAR ── */
+  .filter-bar {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.2rem;
+    flex-wrap: wrap;
+  }
+  .filter-bar select, .filter-bar input {
+    flex: 1;
+    min-width: 140px;
+    font-size: 0.78rem;
+    padding: 9px 12px;
+  }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    background: var(--forest);
+    color: var(--paper);
+    padding: 12px 20px;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    letter-spacing: 0.03em;
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1);
+    z-index: 999;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.2);
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  .divider { margin: 1.5rem 0; border: none; border-top: 1px solid var(--rule); }
+  .text-center { text-align: center; }
+  .mt-1 { margin-top: 0.5rem; }
+  .gap-btn { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+
+  @media (max-width: 520px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .page-title { font-size: 1.9rem; }
+    .miles-display { font-size: 2.2rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>MileTrack</h1>
+    <div class="tagline">Monthly Reimbursement Portal</div>
+  </div>
+  <button class="admin-toggle" onclick="showAdminEntry()">Admin ↗</button>
+</header>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<main>
+
+  <!-- ══ EMPLOYEE FORM ══ -->
+  <div class="view active" id="view-employee">
+    <div class="page-title">Log your<br><em>miles.</em></div>
+    <div class="page-sub">Monthly mileage reimbursement · Complete one form per month</div>
+
+    <div id="employee-form">
+      <div class="form-group">
+        <label for="emp-email">Work Email Address</label>
+        <input type="email" id="emp-email" placeholder="you@modpizza.com" />
+        <div class="error-msg" id="err-email">Please enter a valid email address.</div>
+      </div>
+
+      <div class="form-group">
+        <label for="emp-month">Reimbursement Month</label>
+        <select id="emp-month">
+          <option value="">— Select month —</option>
+          <option>January 2025</option><option>February 2025</option><option>March 2025</option>
+          <option>April 2025</option><option>May 2025</option><option>June 2025</option>
+          <option>July 2025</option><option>August 2025</option><option>September 2025</option>
+          <option>October 2025</option><option>November 2025</option><option>December 2025</option>
+          <option>January 2026</option><option>February 2026</option><option selected>March 2026</option>
+          <option>April 2026</option><option>May 2026</option><option>June 2026</option>
+          <option>July 2026</option><option>August 2026</option><option>September 2026</option>
+          <option>October 2026</option><option>November 2026</option><option>December 2026</option>
+        </select>
+        <div class="error-msg" id="err-month">Please select a month.</div>
+      </div>
+
+      <div class="form-group">
+        <label for="emp-miles">Miles Driven</label>
+        <input type="number" id="emp-miles" placeholder="0" min="0" max="9999" step="0.1"
+          oninput="updateMilesDisplay(this.value)" />
+        <div class="miles-display" id="miles-display">—<span class="miles-unit"> mi</span></div>
+        <div class="error-msg" id="err-miles">Please enter a valid mileage (greater than 0).</div>
+      </div>
+
+      <button class="btn btn-primary" id="submit-btn" onclick="submitForm()">Submit Mileage →</button>
+    </div>
+
+    <div class="success-box" id="success-box">
+      <div class="check">✓</div>
+      <p><strong id="success-name"></strong><span id="success-detail"></span></p>
+      <hr class="divider" />
+      <button class="btn btn-outline" onclick="resetForm()" style="font-size:0.72rem;padding:9px 20px;">Submit Another Entry</button>
+    </div>
+  </div>
+
+  <!-- ══ ADMIN AUTH ══ -->
+  <div class="view" id="view-auth">
+    <div class="auth-panel">
+      <div class="lock-icon">🔒</div>
+      <h2>Admin Access</h2>
+      <div class="sub">Restricted — Authorized Personnel Only</div>
+
+      <div class="form-group">
+        <label for="admin-pass">Password</label>
+        <input type="password" id="admin-pass" placeholder="Enter admin password"
+          onkeydown="if(event.key==='Enter') checkPassword()" />
+        <div class="error-msg" id="err-pass">Incorrect password. Please try again.</div>
+      </div>
+
+      <button class="btn btn-primary" onclick="checkPassword()">Unlock Dashboard →</button>
+      <hr class="divider" />
+      <div class="text-center">
+        <button class="btn btn-outline mt-1" onclick="showView('view-employee')" style="font-size:0.72rem;padding:9px 20px;">← Back to Employee Form</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ ADMIN DASHBOARD ══ -->
+  <div class="view" id="view-admin">
+    <div class="admin-header-row">
+      <div>
+        <div class="page-title">Submissions<br><em>Dashboard</em></div>
+        <div class="page-sub" style="margin-bottom:0;border:none">Administrator view · All employee entries</div>
+      </div>
+      <div class="gap-btn" style="padding-top:0.5rem">
+        <button class="btn btn-secondary" onclick="exportExcel()">Export to Excel ↓</button>
+        <button class="btn btn-outline" onclick="lockAdmin()">Lock</button>
+      </div>
+    </div>
+
+    <div class="stats-row" id="stats-row">
+      <div class="stat-card"><div class="stat-num" id="stat-entries">0</div><div class="stat-lbl">Entries</div></div>
+      <div class="stat-card"><div class="stat-num" id="stat-miles">0</div><div class="stat-lbl">Total Miles</div></div>
+    </div>
+
+    <div class="filter-bar">
+      <select id="filter-month" onchange="renderTable()">
+        <option value="">All Months</option>
+      </select>
+      <input type="text" id="filter-search" placeholder="Search email…" oninput="renderTable()" style="flex:2" />
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Email</th>
+            <th>Month</th>
+            <th>Miles</th>
+            <th>Submitted</th>
+          </tr>
+        </thead>
+        <tbody id="admin-tbody"></tbody>
+      </table>
+    </div>
+
+    <div style="margin-top:1rem;font-size:0.68rem;color:#aaa;letter-spacing:0.04em">
+      Data stored in this browser session only.
+    </div>
+  </div>
+
+</main>
+
+<script>
+  // ── Config ──
+  const ADMIN_PASSWORD = 'modpizza2026';
+  const SP_SITE = 'https://modpizza.sharepoint.com/sites/Mileage';
+  const SP_LIST = 'MileageSubmissions';
+  const SP_API  = `${SP_SITE}/_api/web/lists/getbytitle('${SP_LIST}')/items`;
+
+  let entries = []; // populated from SharePoint when admin logs in
+
+  // ── SharePoint helpers ──
+  async function getDigest() {
+    const r = await fetch(`${SP_SITE}/_api/contextinfo`, {
+      method: 'POST',
+      headers: { Accept: 'application/json;odata=verbose' },
+      credentials: 'include'
+    });
+    const d = await r.json();
+    return d.d.GetContextWebInformation.FormDigestValue;
+  }
+
+  async function spPost(data) {
+    const digest = await getDigest();
+    const r = await fetch(SP_API, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json;odata=verbose',
+        'Content-Type': 'application/json;odata=verbose',
+        'X-RequestDigest': digest,
+        'X-HTTP-Method': 'POST'
+      },
+      body: JSON.stringify({ __metadata: { type: `SP.Data.${SP_LIST}ListItem` }, ...data })
+    });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  }
+
+  async function spGet(filter) {
+    let url = `${SP_API}?$select=Title,Month,Miles,Submitted&$orderby=Created desc&$top=500`;
+    if (filter) url += `&$filter=${encodeURIComponent(filter)}`;
+    const r = await fetch(url, {
+      credentials: 'include',
+      headers: { Accept: 'application/json;odata=verbose' }
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    return d.d.results.map(i => ({
+      email: i.Title,
+      month: i.Month,
+      miles: i.Miles,
+      submitted: i.Submitted
+    }));
+  }
+
+  // ── Views ──
+  function showView(id) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    window.scrollTo(0, 0);
+  }
+  function showAdminEntry() { showView('view-auth'); document.getElementById('admin-pass').value = ''; clearErr('err-pass'); }
+  function lockAdmin() { showView('view-employee'); }
+
+  // ── Auth ──
+  function checkPassword() {
+    const pw = document.getElementById('admin-pass').value;
+    if (pw === ADMIN_PASSWORD) {
+      clearErr('err-pass');
+      showView('view-admin');
+      loadAdminData();
+    } else {
+      document.getElementById('err-pass').style.display = 'block';
+    }
+  }
+
+  // ── Form ──
+  function updateMilesDisplay(v) {
+    const n = parseFloat(v);
+    const disp = document.getElementById('miles-display');
+    if (!isNaN(n) && n > 0) {
+      disp.innerHTML = n.toFixed(1) + '<span class="miles-unit"> mi</span>';
+    } else {
+      disp.innerHTML = '—<span class="miles-unit"> mi</span>';
+    }
+  }
+
+  function clearErr(id) { document.getElementById(id).style.display = 'none'; }
+
+  function setSubmitLoading(on) {
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = on;
+    btn.textContent = on ? 'Submitting…' : 'Submit Mileage →';
+  }
+
+  async function submitForm() {
+    const email = document.getElementById('emp-email').value.trim();
+    const month = document.getElementById('emp-month').value;
+    const miles = parseFloat(document.getElementById('emp-miles').value);
+
+    let valid = true;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { document.getElementById('err-email').style.display='block'; valid=false; } else clearErr('err-email');
+    if (!month) { document.getElementById('err-month').style.display='block'; valid=false; } else clearErr('err-month');
+    if (isNaN(miles) || miles <= 0) { document.getElementById('err-miles').style.display='block'; valid=false; } else clearErr('err-miles');
+    if (!valid) return;
+
+    const submitted = new Date().toLocaleString('en-US', {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+
+    setSubmitLoading(true);
+    try {
+      await spPost({ Title: email, Month: month, Miles: miles, Submitted: submitted });
+      document.getElementById('employee-form').style.display = 'none';
+      const box = document.getElementById('success-box');
+      box.style.display = 'block';
+      document.getElementById('success-name').textContent = email;
+      document.getElementById('success-detail').textContent = ` — ${miles} miles logged for ${month}.`;
+    } catch (err) {
+      toast('Submission failed. Please check your connection and try again.');
+      console.error(err);
+    } finally {
+      setSubmitLoading(false);
+    }
+  }
+
+  function resetForm() {
+    document.getElementById('emp-email').value = '';
+    document.getElementById('emp-month').value = '';
+    document.getElementById('emp-miles').value = '';
+    document.getElementById('miles-display').innerHTML = '—<span class="miles-unit"> mi</span>';
+    ['err-email','err-month','err-miles'].forEach(clearErr);
+    document.getElementById('employee-form').style.display = 'block';
+    document.getElementById('success-box').style.display = 'none';
+  }
+
+  // ── Admin ──
+  async function loadAdminData() {
+    const tbody = document.getElementById('admin-tbody');
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">Loading from SharePoint…</div></td></tr>';
+    try {
+      entries = await spGet();
+      populateMonthFilter();
+      renderTable();
+    } catch (err) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">Could not load data. Ensure you are signed into SharePoint.</div></td></tr>';
+      console.error(err);
+    }
+  }
+
+  function populateMonthFilter() {
+    const sel = document.getElementById('filter-month');
+    const months = [...new Set(entries.map(e => e.month))].sort();
+    sel.innerHTML = '<option value="">All Months</option>' + months.map(m => `<option>${m}</option>`).join('');
+  }
+
+  function getFiltered() {
+    const month = document.getElementById('filter-month').value;
+    const search = document.getElementById('filter-search').value.toLowerCase();
+    return entries.filter(e =>
+      (!month || e.month === month) &&
+      (!search || e.email.toLowerCase().includes(search))
+    );
+  }
+
+  function renderTable() {
+    const filtered = getFiltered();
+    const tbody = document.getElementById('admin-tbody');
+
+    document.getElementById('stat-entries').textContent = entries.length;
+    document.getElementById('stat-miles').textContent = entries.reduce((s,e) => s + e.miles, 0).toFixed(0);
+
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">No entries found.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = filtered.map((e, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${e.email}</td>
+        <td>${e.month}</td>
+        <td>${e.miles}</td>
+        <td>${e.submitted}</td>
+      </tr>
+    `).join('');
+  }
+
+  // ── Excel Export ──
+  function exportExcel() {
+    if (!entries.length) { toast('No entries to export yet.'); return; }
+
+    const filtered = getFiltered();
+    const rows = filtered.map((e, i) => ({
+      '#': i + 1,
+      'Email Address': e.email,
+      'Month': e.month,
+      'Miles Driven': e.miles,
+      'Submitted': e.submitted
+    }));
+
+    const totalMiles = filtered.reduce((s, e) => s + e.miles, 0);
+    rows.push({'#':'','Email Address':'TOTAL','Month':'','Miles Driven':+totalMiles.toFixed(1),'Submitted':''});
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [{wch:5},{wch:32},{wch:16},{wch:14},{wch:22}];
+
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const addr = XLSX.utils.encode_cell({r:0, c:C});
+      if (!ws[addr]) continue;
+      ws[addr].s = { font:{bold:true}, fill:{fgColor:{rgb:'2D4A3E'}}, alignment:{horizontal:'center'} };
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Mileage Submissions');
+
+    const meta = XLSX.utils.aoa_to_sheet([
+      ['Report Generated', new Date().toLocaleString()],
+      ['Total Entries', filtered.length],
+      ['Total Miles', +totalMiles.toFixed(1)]
+    ]);
+    meta['!cols'] = [{wch:26},{wch:22}];
+    XLSX.utils.book_append_sheet(wb, meta, 'Summary');
+
+    const monthTag = document.getElementById('filter-month').value.replace(/\s/g,'_') || 'All';
+    const dateTag = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, `MileageReport_${monthTag}_${dateTag}.xlsx`);
+    toast('Excel file exported successfully ✓');
+  }
+
+  // ── Toast ──
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+</script>
+</body>
+</html>
